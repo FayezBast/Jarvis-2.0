@@ -1,0 +1,81 @@
+# ==============================================================================
+# Docker Ignore - Security: Don't include sensitive files in image
+# ==============================================================================
+
+# Environment and secrets - NEVER include these!
+.env
+.env.*
+*.env
+secrets/
+*.pem
+*.key
+*.crt
+
+# Git
+.git
+.gitignore
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+*.egg
+.eggs/
+
+# Virtual environments - we build fresh in container
+.venv/
+venv/
+ENV/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+
+# Build artifacts
+build/
+dist/
+*.whl
+
+# Logs - mount these, don't bake in
+logs/
+*.log
+jarvis_telegram.log
+
+# Agent data - mount these, don't bake in
+.agent_memory.json
+.agent_history/
+jarvis_workdir/
+
+# Docker files for nested builds
+Dockerfile*
+docker-compose*.yml
+.docker/
+
+# Documentation
+*.md
+docs/
+LICENSE
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini

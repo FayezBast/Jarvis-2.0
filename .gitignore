@@ -2,6 +2,7 @@
 .env
 .env.local
 .env.*
+!.env.example
 
 # Python cache
 __pycache__/
@@ -18,6 +19,17 @@ env/
 # Agent data
 .agent_memory.json
 .agent_history/
+
+# Logs - may contain sensitive info
+*.log
+logs/
+jarvis_telegram.log
+
+# Container workspace
+jarvis_workdir/
+
+# Built Go binaries (platform-specific, generated)
+tools/bin/
 
 # IDE
 .vscode/

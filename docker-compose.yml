@@ -1,0 +1,59 @@
+services:
+  jarvis-telegram:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: jarvis-telegram
+    restart: unless-stopped
+
+    user: "1000:1000"
+    read_only: true
+    init: true
+
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+
+    networks:
+      - jarvis-net
+
+    # Real limits for docker compose (non-swarm)
+    mem_limit: 512m
+    cpus: 1.0
+    pids_limit: 256
+
+    env_file:
+      - .env
+
+    environment:
+      - JARVIS_DRY_RUN=true
+      - TELEGRAM_REQUIRE_CONFIRM=true
+      - TELEGRAM_RATE_LIMIT_PER_MIN=20
+      - JARVIS_WORKING_DIR=/app/workdir
+      - JARVIS_LOG_FILE=/app/logs/jarvis_telegram.log
+      - PYTHONDONTWRITEBYTECODE=1
+      - PYTHONUNBUFFERED=1
+
+    volumes:
+      - ./jarvis_workdir:/app/workdir:rw
+      - ./logs:/app/logs:rw
+      # (Optional) move memory into workdir instead of /app root:
+      # - ./jarvis_workdir/.agent_memory.json:/app/workdir/.agent_memory.json:rw
+
+    tmpfs:
+      - /tmp:size=64M,mode=1777,uid=1000,gid=1000
+      - /run:size=16M,mode=755,uid=1000,gid=1000
+      - /app/__pycache__:size=32M,mode=755,uid=1000,gid=1000
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  jarvis-net:
+    driver: bridge
+    driver_opts:
+      com.docker.network.bridge.enable_icc: "false"

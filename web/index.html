@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Jarvis Voice Console</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="backdrop"></div>
+  <div class="app">
+    <header class="top">
+      <div class="title">
+        <div class="orb" aria-hidden="true"></div>
+        <div>
+          <h1>Jarvis Voice Console</h1>
+          <p>Local-first control with wake word support.</p>
+        </div>
+      </div>
+      <div class="controls">
+        <label class="control">
+          <span>Provider</span>
+          <select id="providerSelect"></select>
+        </label>
+        <label class="control">
+          <span>Model</span>
+          <input id="modelInput" type="text" placeholder="Model name" />
+        </label>
+        <button id="resetBtn" class="ghost">Reset</button>
+      </div>
+    </header>
+
+    <main class="chat" id="chatLog" aria-live="polite"></main>
+
+    <footer class="inputBar">
+      <div class="inputRow">
+        <input id="textInput" type="text" placeholder="Ask Jarvis to do something..." autocomplete="off" />
+        <button id="sendBtn" class="primary">Send</button>
+        <button id="voiceBtn" class="voice">Voice Mode</button>
+      </div>
+      <div class="status">
+        <span id="statusDot" class="dot idle"></span>
+        <span id="statusText">Voice idle</span>
+        <span class="hint">Say "hey jarvis" then your command.</span>
+      </div>
+    </footer>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

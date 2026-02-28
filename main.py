@@ -1,118 +1,41 @@
+#!/usr/bin/env python3
+"""
+Jarvis-2.0 - A Local-First AI Assistant
+
+This is the main entry point for Jarvis. It provides:
+- Interactive multi-turn conversation mode
+- Single prompt mode for scripting
+- Command-line interface with various options
+
+Usage:
+    python main.py "Your prompt here"
+    python main.py --interactive
+    python main.py -i -w ./myproject
+"""
+
 import os
 import sys
-import time
 import logging
 import argparse
-from dotenv import load_dotenv
-from google import genai
-from google.genai import types
-from google.genai.errors import APIError
 
+from core.agent import create_agent
+from config import get_config, normalize_provider
 from prompts import system_prompt
-from call_function import available_functions, call_function
-
-
-MODEL_NAME = "gemini-2.5-flash"
-MAX_ITERS = 20
-MAX_RETRIES = 3
-RETRY_DELAY = 2  # seconds
 
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
-
-
-def process_prompt(client, messages, args):
-    """Process a single prompt through the agent loop."""
-    for iteration in range(MAX_ITERS):
-        # Retry loop for API errors
-        response = None
-        for retry in range(MAX_RETRIES):
-            try:
-                response = client.models.generate_content(
-                    model=MODEL_NAME,
-                    contents=messages,
-                    config=types.GenerateContentConfig(
-                        system_instruction=system_prompt,
-                        tools=[available_functions],
-                        temperature=0,
-                    ),
-                )
-                break  # Success, exit retry loop
-            except APIError as e:
-                if retry < MAX_RETRIES - 1:
-                    wait_time = RETRY_DELAY * (2 ** retry)  # Exponential backoff
-                    logger.warning(f"API error (attempt {retry + 1}/{MAX_RETRIES}): {e}. Retrying in {wait_time}s...")
-                    time.sleep(wait_time)
-                else:
-                    logger.error(f"API error after {MAX_RETRIES} attempts: {e}")
-                    raise
-
-        if response is None:
-            raise RuntimeError("Failed to get response from API")
-
-        if response.usage_metadata is None:
-            raise RuntimeError("Gemini API request failed: usage_metadata is None.")
-
-        if args.verbose:
-            print(f"Prompt tokens: {response.usage_metadata.prompt_token_count}")
-            print(f"Response tokens: {response.usage_metadata.candidates_token_count}")
-
-        # 1) Add model candidates to conversation history
-        if response.candidates:
-            for cand in response.candidates:
-                if cand.content is not None:
-                    messages.append(cand.content)
-
-        # 2) If the model is done (no tool calls), return the response
-        if not response.function_calls:
-            return response.text
-
-        # 3) Execute tool calls, validate results, collect parts
-        function_responses = []
-        for fc in response.function_calls:
-            function_call_result = call_function(
-                fc,
-                verbose=args.verbose,
-                working_directory=args.working_dir,
-                dry_run=args.dry_run
-            )
-
-            if not function_call_result.parts:
-                raise RuntimeError("Tool response had no parts")
-
-            fr = function_call_result.parts[0].function_response
-            if fr is None:
-                raise RuntimeError("Tool response part had no function_response")
-
-            if fr.response is None:
-                raise RuntimeError("FunctionResponse.response was None")
-
-            function_responses.append(function_call_result.parts[0])
-
-            if args.verbose:
-                print(f"-> {function_call_result.parts[0].function_response.response}")
-
-        # 4) Feed tool responses back into the conversation for the next iteration
-        messages.append(types.Content(role="user", parts=function_responses))
-
-    # If we got here, the agent never finished
-    return f"Error: Reached max iterations ({MAX_ITERS}) without producing a final response."
-
-
-def interactive_mode(client, args):
+def interactive_mode(agent):
     """Run the agent in interactive multi-turn mode."""
     print("=" * 60)
-    print("🤖 AI Coding Agent - Interactive Mode")
+    print("🤖 Jarvis-2.0 - Local-First AI Assistant")
     print("=" * 60)
-    print(f"Working directory: {os.path.abspath(args.working_dir)}")
-    print("Commands: 'exit' or 'quit' to exit, 'clear' to reset conversation")
+    print(f"Working directory: {agent.config.working_directory}")
+    print("Commands: 'exit'/'quit' to exit, '/reset' to clear history, '/memory' to show memory")
     print("=" * 60)
     print()
-
-    messages = []
 
     while True:
         try:
@@ -124,55 +47,59 @@ def interactive_mode(client, args):
         if not user_input:
             continue
 
+        # Handle special commands
         if user_input.lower() in ['exit', 'quit', 'q']:
             print("\nGoodbye! 👋")
             break
 
-        if user_input.lower() == 'clear':
-            messages = []
-            print("\n🗑️  Conversation cleared.\n")
+        if user_input.lower() == '/reset':
+            agent.reset()
+            print("\n🗑️  Conversation reset.\n")
             continue
 
-        if user_input.lower() == 'history':
-            print(f"\n📜 Conversation has {len(messages)} messages.\n")
+        if user_input.lower() == '/memory':
+            # Quick memory display
+            from tools.builtin.memory_tools import _load_memory
+            memory = _load_memory(agent.config.working_directory)
+            if memory:
+                print("\n📝 Stored Memory:")
+                for k, v in memory.items():
+                    print(f"  • {k}: {v[:50]}..." if len(str(v)) > 50 else f"  • {k}: {v}")
+            else:
+                print("\n📝 Memory is empty.")
+            print()
             continue
 
-        # Add user message
-        messages.append(
-            types.Content(role="user", parts=[types.Part(text=user_input)])
-        )
+        if user_input.lower() == '/help':
+            print("\n📖 Commands:")
+            print("  /reset  - Clear conversation history")
+            print("  /memory - Show stored memory")
+            print("  /help   - Show this help")
+            print("  exit    - Quit Jarvis")
+            print()
+            continue
 
+        # Process the user input
         print()
         try:
-            response = process_prompt(client, messages, args)
-            print(f"\033[92mAgent:\033[0m {response}")
+            response = agent.process(user_input)
+            print(f"\033[92mJarvis:\033[0m {response}")
         except Exception as e:
+            logger.exception("Error processing request")
             print(f"\033[91mError:\033[0m {e}")
         print()
 
 
-def single_prompt_mode(client, args):
+def single_prompt_mode(agent, prompt: str):
     """Run the agent with a single prompt."""
-    messages = [
-        types.Content(role="user", parts=[types.Part(text=args.user_prompt)])
-    ]
-
-    response = process_prompt(client, messages, args)
+    response = agent.process(prompt)
     print("Final response:")
     print(response)
 
 
 def main():
-    load_dotenv()
-
-    api_key = os.getenv("GEMINI_API_KEY")
-    if not api_key:
-        raise RuntimeError("GEMINI_API_KEY not found in environment")
-
-    client = genai.Client(api_key=api_key)
-
     parser = argparse.ArgumentParser(
-        description="AI Coding Agent - A powerful assistant for coding tasks",
+        description="Jarvis-2.0 - A Local-First AI Assistant",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
@@ -186,16 +113,54 @@ Examples:
     parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose output")
     parser.add_argument("-w", "--working-dir", type=str, default=".", help="Working directory for file operations")
     parser.add_argument("--dry-run", action="store_true", help="Preview write operations without executing them")
+    parser.add_argument("--provider", type=str, default=None, choices=["gemini", "ollama", "local"], help="LLM provider: gemini (API) or ollama (local)")
+    parser.add_argument("--model", type=str, default=None, help="Model to use")
+    parser.add_argument("--ollama-url", type=str, default=None, help="Ollama base URL (default from .env)")
+    parser.add_argument("--ollama-model", type=str, default=None, help="Ollama model name (default from .env)")
     args = parser.parse_args()
+
+    # Load configuration (provider-aware)
+    try:
+        config = get_config(provider_override=args.provider)
+    except RuntimeError as e:
+        print(f"Configuration error: {e}")
+        print("Tip: set LLM_PROVIDER=ollama or pass --provider ollama for local mode.")
+        sys.exit(1)
+
+    provider = normalize_provider(args.provider or config.provider)
+    model_name = args.model
+    if not model_name:
+        model_name = config.model_name if provider == "gemini" else config.ollama_model
+    if provider == "ollama" and args.ollama_model:
+        model_name = args.ollama_model
+
+    ollama_url = args.ollama_url or config.ollama_base_url
 
     # Validate arguments
     if not args.interactive and not args.user_prompt:
         parser.error("Either provide a user_prompt or use --interactive mode")
 
+    # Create the agent
+    agent = create_agent(
+        api_key=config.gemini_api_key if provider == "gemini" else None,
+        system_prompt=system_prompt,
+        working_directory=os.path.abspath(args.working_dir),
+        model_name=model_name,
+        dry_run=args.dry_run,
+        verbose=args.verbose,
+        provider=provider,
+        base_url=ollama_url,
+        local_tools_enabled=config.local_tools_enabled,
+        max_iterations=config.max_iterations,
+        max_retries=config.max_retries,
+        retry_delay=config.retry_delay,
+        temperature=config.temperature,
+    )
+
     if args.interactive:
-        interactive_mode(client, args)
+        interactive_mode(agent)
     else:
-        single_prompt_mode(client, args)
+        single_prompt_mode(agent, args.user_prompt)
 
 
 if __name__ == "__main__":
